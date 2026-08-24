@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform format
+        run: terraform fmt -check -recursive terraform
+      - name: Docker build
+        run: docker build -t cloud-platform-api:${{ github.sha }} .
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform init
+        working-directory: terraform/environments/dev
+        run: terraform init -backend=false
+      - name: Terraform validate
+        working-directory: terraform/environments/dev
+        run: terraform validate
