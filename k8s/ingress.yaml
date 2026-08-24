@@ -4,7 +4,7 @@ metadata:
   name: cloud-platform-api
   namespace: cloud-platform
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
@@ -18,3 +18,6 @@ spec:
                 name: cloud-platform-api
                 port:
                   number: 80
+
+# TLS should be enabled only after a real DNS name and certificate issuer are configured.
+# Recommended production follow-up: cert-manager + Let's Encrypt (or AWS Load Balancer/ACM).
