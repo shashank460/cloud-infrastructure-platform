@@ -9,12 +9,17 @@ terraform {
 variable "cluster_name" { type = string }
 variable "environment" { type = string }
 variable "private_subnet_ids" { type = list(string) }
-variable "public_access_cidrs" {
-  type    = list(string)
-  default = []
-}
+variable "public_access_cidrs" { type = list(string) }
 
 data "aws_caller_identity" "current" {}
+
+data "aws_subnet" "private" {
+  id = var.private_subnet_ids[0]
+}
+
+data "aws_vpc" "cluster" {
+  id = data.aws_subnet.private.vpc_id
+}
 
 data "aws_iam_policy_document" "cluster_assume" {
   statement {
@@ -31,6 +36,19 @@ resource "aws_iam_role" "cluster" {
 resource "aws_iam_role_policy_attachment" "cluster" {
   role       = aws_iam_role.cluster.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_eks_cluster" "this" {
+  name     = var.cluster_name
+  role_arn = aws_iam_role.cluster.arn
+  vpc_config {
+    subnet_ids              = var.private_subnet_ids
+    endpoint_private_access = true
+    endpoint_public_access  = true
+    public_access_cidrs     = var.public_access_cidrs
+  }
+  access_config { authentication_mode = "API_AND_CONFIG_MAP" }
+  depends_on = [aws_iam_role_policy_attachment.cluster]
 }
 
 resource "aws_security_group" "nodes" {
@@ -62,27 +80,6 @@ resource "aws_security_group" "nodes" {
   }
 }
 
-data "aws_vpc" "cluster" {
-  id = data.aws_subnet.private.vpc_id
-}
-
-data "aws_subnet" "private" {
-  id = var.private_subnet_ids[0]
-}
-
-resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
-  role_arn = aws_iam_role.cluster.arn
-  vpc_config {
-    subnet_ids              = var.private_subnet_ids
-    endpoint_private_access = true
-    endpoint_public_access  = true
-    public_access_cidrs     = var.public_access_cidrs
-  }
-  access_config { authentication_mode = "API_AND_CONFIG_MAP" }
-  depends_on = [aws_iam_role_policy_attachment.cluster]
-}
-
 data "aws_iam_policy_document" "node_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -99,13 +96,27 @@ resource "aws_iam_role_policy_attachment" "node_worker" {
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
+
 resource "aws_iam_role_policy_attachment" "node_cni" {
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
+
 resource "aws_iam_role_policy_attachment" "node_ecr" {
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+}
+
+resource "aws_launch_template" "nodes" {
+  name_prefix            = "${var.cluster_name}-nodes-"
+  instance_type          = "t3.small"
+  vpc_security_group_ids = [aws_security_group.nodes.id]
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
 }
 
 resource "aws_eks_node_group" "this" {
@@ -113,27 +124,27 @@ resource "aws_eks_node_group" "this" {
   node_group_name = "${var.cluster_name}-nodes"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.private_subnet_ids
-  instance_types  = ["t3.small"]
-  capacity_type   = "ON_DEMAND"
-  remote_access { ec2_ssh_key = null }
-  scaling_config { desired_size = 2, min_size = 2, max_size = 4 }
+
+  capacity_type = "ON_DEMAND"
+
+  scaling_config {
+    desired_size = 2
+    min_size     = 2
+    max_size     = 4
+  }
+
   update_config { max_unavailable = 1 }
+
   launch_template {
     id      = aws_launch_template.nodes.id
     version = aws_launch_template.nodes.latest_version
   }
-  depends_on = [aws_iam_role_policy_attachment.node_worker, aws_iam_role_policy_attachment.node_cni, aws_iam_role_policy_attachment.node_ecr]
-}
 
-resource "aws_launch_template" "nodes" {
-  name_prefix   = "${var.cluster_name}-nodes-"
-  instance_type = "t3.small"
-  vpc_security_group_ids = [aws_security_group.nodes.id]
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
+  depends_on = [
+    aws_iam_role_policy_attachment.node_worker,
+    aws_iam_role_policy_attachment.node_cni,
+    aws_iam_role_policy_attachment.node_ecr
+  ]
 }
 
 resource "aws_eks_access_entry" "deployer" {
