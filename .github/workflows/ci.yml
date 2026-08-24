@@ -1,11 +1,32 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
+
 permissions:
   contents: read
+  security-events: write
+
 jobs:
+  application-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -15,6 +36,7 @@ jobs:
         run: terraform fmt -check -recursive terraform
       - name: Docker build
         run: docker build -t cloud-platform-api:${{ github.sha }} .
+
   terraform-validate:
     runs-on: ubuntu-latest
     steps:
@@ -26,3 +48,22 @@ jobs:
       - name: Terraform validate
         working-directory: terraform/environments/dev
         run: terraform validate
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkov IaC scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform,kubernetes,dockerfile
+          soft_fail: false
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
