@@ -1,6 +1,10 @@
-aws_region="ap-south-1"
-environment="dev"
-vpc_cidr="10.20.0.0/16"
-cluster_name="cloud-platform-dev"
-db_name="appdb"
-db_username="appuser"
+aws_region = "ap-south-1"
+environment = "dev"
+vpc_cidr = "10.20.0.0/16"
+cluster_name = "cloud-platform-dev"
+db_name = "appdb"
+db_username = "appuser"
+
+# Replace with your trusted VPN/office/runner egress CIDR.
+# Example: ["198.51.100.10/32"]
+eks_public_access_cidrs = ["REPLACE_WITH_TRUSTED_CIDR/32"]
