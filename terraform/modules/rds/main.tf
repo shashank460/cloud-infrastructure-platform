@@ -49,9 +49,15 @@ resource "aws_db_instance" "this" {
   db_name                     = var.db_name
   username                    = var.db_username
   manage_master_user_password = true
+  storage_encrypted           = true
+  multi_az                    = true
+  backup_retention_period     = 7
+  deletion_protection         = true
+  copy_tags_to_snapshot       = true
   db_subnet_group_name        = aws_db_subnet_group.this.name
-  vpc_security_group_ids     = [aws_security_group.db.id]
-  skip_final_snapshot         = true
+  vpc_security_group_ids      = [aws_security_group.db.id]
+  skip_final_snapshot         = false
+  final_snapshot_identifier   = "${var.name}-final-snapshot"
   publicly_accessible         = false
 }
 
