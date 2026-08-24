@@ -29,7 +29,6 @@ variable "db_username" {
 }
 
 variable "eks_public_access_cidrs" {
-  description = "Trusted public CIDRs allowed to reach the EKS Kubernetes API. Keep this narrow; use your office/VPN egress CIDR rather than 0.0.0.0/0."
+  description = "Trusted public CIDRs allowed to reach the EKS Kubernetes API. Set this to your VPN/office/GitHub runner egress CIDR; never use 0.0.0.0/0."
   type        = list(string)
-  default     = []
 }
