@@ -25,30 +25,42 @@ jobs:
       - name: Run tests
         run: npm test
 
-  validate:
+  terraform:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v5
+      - name: TFLint init
+        run: tflint --init
+      - name: TFLint
+        run: tflint --recursive
       - name: Terraform format
         run: terraform fmt -check -recursive terraform
-      - name: Docker build
-        run: docker build -t cloud-platform-api:${{ github.sha }} .
-
-  terraform-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
       - name: Terraform init
-        working-directory: terraform/environments/dev
+        working-directory: terraform/environments/${{ matrix.environment }}
         run: terraform init -backend=false
       - name: Terraform validate
-        working-directory: terraform/environments/dev
+        working-directory: terraform/environments/${{ matrix.environment }}
         run: terraform validate
+      - name: Terraform plan
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: terraform plan -refresh=false -input=false -lock=false -out=tfplan
+        env:
+          TF_VAR_eks_public_access_cidrs: '["10.0.0.0/8"]'
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.environment }}
+          path: terraform/environments/${{ matrix.environment }}/tfplan
 
   security-scan:
     runs-on: ubuntu-latest
+    needs: [application-tests, terraform]
     steps:
       - uses: actions/checkout@v4
       - name: Checkov IaC scan
@@ -58,10 +70,25 @@ jobs:
           framework: terraform,kubernetes,dockerfile
           soft_fail: false
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [security-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker build
+        run: docker build -t cloud-platform-api:${{ github.sha }} .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: cloud-platform-api:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
